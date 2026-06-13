@@ -6,7 +6,7 @@
 
 Application de classification d'images de feuilles de plantes (tomate / pomme de terre) détectant si une plante est saine ou malade. Basée sur du **transfer learning** avec ResNet18 pré-entraîné sur ImageNet.
 
-**Lien de démo déployée :** `https://huggingface.co/spaces/VOTRE_PSEUDO/diagno-plante`
+**Lien de démo déployée :** `https://souleyfall-plantanalyze.hf.space/`
 
 ---
 
