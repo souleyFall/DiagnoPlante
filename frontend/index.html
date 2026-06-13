@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🌿 DiagnoPlante — Détecteur de maladies</title>
+<style>
+  :root {
+    --bg: #0d1f0d; --surface: #122012; --green: #4CAF50; --lime: #8BC34A;
+    --gold: #C8B400; --text: #e8f5e8; --muted: #7a9e7a; --red: #e57373;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif;
+         min-height: 100vh; display: flex; flex-direction: column; align-items: center; }
+
+  header { width: 100%; background: linear-gradient(135deg, #0a1a0a, #1a3a1a);
+           border-bottom: 2px solid var(--green); padding: 28px 24px 20px; text-align: center; }
+  header h1 { font-size: 2rem; color: var(--lime); letter-spacing: 1px; }
+  header p  { color: var(--muted); margin-top: 6px; font-size: .95rem; }
+
+  .container { width: 100%; max-width: 700px; padding: 32px 20px; }
+
+  .drop-zone { border: 2px dashed var(--green); border-radius: 16px;
+               background: var(--surface); padding: 48px 24px; text-align: center;
+               cursor: pointer; transition: border-color .2s, background .2s; }
+  .drop-zone:hover, .drop-zone.drag { border-color: var(--lime); background: #1a301a; }
+  .drop-zone input { display: none; }
+  .drop-zone .icon { font-size: 3rem; display: block; margin-bottom: 12px; }
+  .drop-zone p { color: var(--muted); font-size: .95rem; }
+  .drop-zone strong { color: var(--lime); }
+
+  #preview-box { display: none; margin-top: 20px; text-align: center; }
+  #preview-img { max-width: 100%; max-height: 260px; border-radius: 12px;
+                 border: 2px solid var(--green); object-fit: cover; }
+
+  .btn { display: block; width: 100%; margin-top: 20px; padding: 14px;
+         background: var(--green); color: #000; border: none; border-radius: 10px;
+         font-size: 1.05rem; font-weight: 700; cursor: pointer; transition: background .2s; }
+  .btn:hover { background: var(--lime); }
+  .btn:disabled { background: #2a3a2a; color: var(--muted); cursor: not-allowed; }
+
+  #result { display: none; margin-top: 28px; background: var(--surface);
+            border-radius: 14px; padding: 24px; border: 1px solid rgba(76,175,80,.3); }
+  #result h2 { font-size: 1.25rem; margin-bottom: 16px; color: var(--lime); }
+  .pred-label { font-size: 1.4rem; font-weight: 700; margin-bottom: 8px; }
+  .pred-label.healthy { color: var(--lime); }
+  .pred-label.sick    { color: var(--red); }
+  .confidence { color: var(--muted); font-size: .92rem; margin-bottom: 20px; }
+
+  .bar-row { margin: 7px 0; }
+  .bar-label { font-size: .82rem; color: var(--muted); display: flex; justify-content: space-between; margin-bottom: 3px; }
+  .bar-bg { background: #1e301e; border-radius: 6px; height: 10px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 6px; background: var(--green); transition: width .5s; }
+  .bar-fill.top { background: var(--lime); }
+
+  footer { color: var(--muted); font-size: .8rem; margin-top: 40px; padding-bottom: 24px; text-align: center; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🌿 DiagnoPlante</h1>
+  <p>Upload une photo de feuille → diagnostic instantané par IA</p>
+</header>
+
+<div class="container">
+  <div class="drop-zone" id="dropZone">
+    <input type="file" id="fileInput" accept="image/*">
+    <span class="icon">🍃</span>
+    <p><strong>Clique ici</strong> ou glisse une photo de feuille</p>
+    <p style="margin-top:8px; font-size:.82rem">JPG, PNG · Tomate ou Pomme de terre</p>
+  </div>
+
+  <div id="preview-box">
+    <img id="preview-img" alt="aperçu">
+  </div>
+
+  <button class="btn" id="analyzeBtn" disabled>Analyser la feuille</button>
+
+  <div id="result">
+    <h2>🔬 Résultat du diagnostic</h2>
+    <div class="pred-label" id="predLabel"></div>
+    <div class="confidence" id="confText"></div>
+    <div id="bars"></div>
+  </div>
+</div>
+
+<footer>M106 · Projet de fin de module · Transfer Learning ResNet18 · PlantVillage dataset</footer>
+
+<script>
+const dropZone   = document.getElementById('dropZone');
+const fileInput  = document.getElementById('fileInput');
+const previewBox = document.getElementById('preview-box');
+const previewImg = document.getElementById('preview-img');
+const analyzeBtn = document.getElementById('analyzeBtn');
+const resultDiv  = document.getElementById('result');
+let selectedFile = null;
+
+// clic sur la zone -> ouvre le sélecteur de fichier
+dropZone.addEventListener('click', () => fileInput.click());
+
+// drag & drop
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault(); dropZone.classList.remove('drag');
+  const f = e.dataTransfer.files[0];
+  if (f && f.type.startsWith('image/')) handleFile(f);
+});
+
+fileInput.addEventListener('change', () => {
+  if (fileInput.files[0]) handleFile(fileInput.files[0]);
+});
+
+function handleFile(file) {
+  selectedFile = file;
+  const reader = new FileReader();
+  reader.onload = e => {
+    previewImg.src = e.target.result;
+    previewBox.style.display = 'block';
+    analyzeBtn.disabled = false;
+    resultDiv.style.display = 'none';
+  };
+  reader.readAsDataURL(file);
+}
+
+analyzeBtn.addEventListener('click', async () => {
+  if (!selectedFile) return;
+  analyzeBtn.disabled = true;
+  analyzeBtn.textContent = '⏳ Analyse en cours…';
+
+  const form = new FormData();
+  form.append('file', selectedFile);
+
+  try {
+    const resp = await fetch('http://localhost:8000/predict', { method: 'POST', body: form });
+    const data = await resp.json();
+    showResult(data);
+  } catch (err) {
+    alert('Erreur de connexion à l\'API. Vérifiez que le serveur tourne.');
+  } finally {
+    analyzeBtn.disabled = false;
+    analyzeBtn.textContent = 'Analyser la feuille';
+  }
+});
+
+function showResult(data) {
+  resultDiv.style.display = 'block';
+
+  // label principal
+  const label = document.getElementById('predLabel');
+  label.textContent = data.prediction;
+  label.className   = 'pred-label ' + (data.is_healthy ? 'healthy' : 'sick');
+
+  // score de confiance
+  document.getElementById('confText').textContent =
+    `Confiance : ${(data.confidence * 100).toFixed(1)}%`;
+
+  // barres de probabilité
+  const barsDiv = document.getElementById('bars');
+  barsDiv.innerHTML = '';
+  const sorted = Object.entries(data.all_probs).sort((a,b) => b[1]-a[1]);
+  sorted.forEach(([name, prob], i) => {
+    const pct = (prob * 100).toFixed(1);
+    barsDiv.innerHTML += `
+      <div class="bar-row">
+        <div class="bar-label"><span>${name}</span><span>${pct}%</span></div>
+        <div class="bar-bg">
+          <div class="bar-fill ${i===0?'top':''}" style="width:${pct}%"></div>
+        </div>
+      </div>`;
+  });
+
+  resultDiv.scrollIntoView({ behavior: 'smooth' });
+}
+</script>
+</body>
+</html>
